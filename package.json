@@ -28,6 +28,9 @@
       "__app_id": "readonly",
       "__firebase_config": "readonly",
       "__initial_auth_token": "readonly"
+    },
+    "rules": {
+      "no-unused-vars": "warn"
     }
   },
   "browserslist": {
