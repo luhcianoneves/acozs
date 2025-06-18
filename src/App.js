@@ -1,10 +1,57 @@
+// ##########################################################################################
+// ### ATENÇÃO MÁXIMA! POR FAVOR, COPIE APENAS O CÓDIGO REACT ABAIXO DESTA LINHA.         ###
+// ### NÃO COPIE ESTES COMENTÁRIOS DE CABEÇALHO (que começam com // #),                 ###
+// ### NEM AS LINHAS QUE CONTÊM ` `` ` (três crases) OU `<IMMERSIVE>`.                   ###
+// ### COMECE A COPIAR DA LINHA QUE TEM `import React, ...` E TERMINE NO `export default App;`. ###
+// ##########################################################################################
+
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query } from 'firebase/firestore';
 
 // Define o contexto para Firebase
 const FirebaseContext = createContext(null);
+
+// ###########################################################################################
+// ### CONFIGURAÇÃO FIREBASE E INICIALIZAÇÃO: DEVE ESTAR AQUI                              ###
+// ### (FORA DE QUALQUER COMPONENTE OU FUNÇÃO)                                             ###
+// ### ################################################################################### ###
+// ###   ATENÇÃO: SUBSTITUA OS VALORES VAZIOS ("") ABAIXO PELOS SEUS DADOS REAIS!         ###
+// ###   MANTENHA AS ASPAS DUPLAS ("") E COLOQUE SEU VALOR DENTRO DELAS.                 ###
+// ### ################################################################################### ###
+const firebaseConfig = {
+  apiKey: "AIzaSyC8t3hVuXVjEC2m0Fd7WpgNogNjK6Fsil4",
+  authDomain: "acozs-app.firebaseapp.com",
+  projectId: "acozs-app",
+  storageBucket: "acozs-app.firebasestorage.app",
+  messagingSenderId: "1077907049338",
+  appId: "1:1077907049338:web:7e30d0eea03e74f9ebe4c3"
+};
+
+// Inicializa o Firebase App e seus serviços UMA ÚNICA VEZ
+let app;
+let firestoreDb;
+let firebaseAuthInstance;
+
+try {
+  // Verifica se a configuração foi realmente fornecida antes de inicializar
+  if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "") {
+    // Isso lançará um erro se os valores não forem preenchidos
+    // Para ambientes de produção, estes valores DEVEM ser preenchidos.
+    throw new Error("Firebase config not provided. Por favor, cole sua configuração REAL da Firebase Console no App.js.");
+  }
+  app = initializeApp(firebaseConfig);
+  firestoreDb = getFirestore(app);
+  firebaseAuthInstance = getAuth(app);
+} catch (e) {
+  console.error("Erro FATAL na inicialização GLOBAL do Firebase:", e);
+  // Se a inicialização global falhar, os estados de erro no componente App lidarão com isso.
+}
+// ###########################################################################################
+// ### FIM DA CONFIGURAÇÃO E INICIALIZAÇÃO FIREBASE                                      ###
+// ###########################################################################################
+
 
 const App = () => {
     // Estado para controlar a página atual do aplicativo
@@ -38,54 +85,44 @@ const App = () => {
     };
 
     useEffect(() => {
-        const initializeFirebase = async () => {
-            try {
-                // Obter __app_id e __firebase_config do ambiente Canvas
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // As instâncias do Firebase são inicializadas GLOBALMENTE acima.
+        // Aqui, apenas as passamos para o estado local do componente
+        // e iniciamos a autenticação/monitoramento.
+        if (firestoreDb && firebaseAuthInstance) {
+            setDb(firestoreDb);
+            setAuth(firebaseAuthInstance);
 
-                if (Object.keys(firebaseConfig).length === 0) {
-                    throw new Error("Firebase config not provided.");
-                }
+            const authCheck = async () => {
+                try {
+                    // Para hospedagem externa, autenticamos anonimamente para ter um UID
+                    await signInAnonymously(firebaseAuthInstance);
 
-                // Inicializar o Firebase App
-                const app = initializeApp(firebaseConfig);
-                const firestore = getFirestore(app);
-                const firebaseAuth = getAuth(app);
-
-                setDb(firestore);
-                setAuth(firebaseAuth);
-
-                // Autenticar o usuário
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (initialAuthToken) {
-                    await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                } else {
-                    await signInAnonymously(firebaseAuth);
-                }
-
-                // Monitorar o estado de autenticação
-                const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                    } else {
-                        // Se o usuário deslogar, ou se não houver token, usa um ID anônimo ou UUID
-                        setUserId(crypto.randomUUID());
-                    }
-                    setIsAuthReady(true);
+                    // Monitorar o estado de autenticação
+                    const unsubscribe = onAuthStateChanged(firebaseAuthInstance, (user) => {
+                        if (user) {
+                            setUserId(user.uid);
+                        } else {
+                            // Se o usuário deslogar, ou se não houver token, usa um ID anônimo ou UUID
+                            setUserId(crypto.randomUUID());
+                        }
+                        setIsAuthReady(true);
+                        setLoading(false);
+                    });
+                    return () => unsubscribe(); // Limpeza do listener
+                } catch (err) {
+                    console.error("Erro na autenticação Firebase:", err);
+                    setError("Erro ao autenticar no aplicativo. Verifique as regras de segurança do Firebase ou sua conexão.");
                     setLoading(false);
-                });
+                }
+            };
+            authCheck(); // Chama a função assíncrona
+        } else {
+            // Se a inicialização global falhou (devido a config faltando, por exemplo)
+            setError("Erro crítico: Configuração do Firebase ausente ou inválida. Por favor, verifique o App.js.");
+            setLoading(false);
+        }
+    }, []); // Dependências vazias para rodar apenas uma vez
 
-                return () => unsubscribe(); // Limpeza do listener
-            } catch (err) {
-                console.error("Erro ao inicializar Firebase:", err);
-                setError("Erro ao carregar o aplicativo. Tente novamente mais tarde.");
-                setLoading(false);
-            }
-        };
-
-        initializeFirebase();
-    }, []);
 
     if (loading) {
         return (
@@ -109,7 +146,7 @@ const App = () => {
             <div className="min-h-screen font-inter text-gray-800 p-4 sm:p-6 lg:p-8" style={{ backgroundColor: '#d5cabd' }}>
                 {/* Popup de Mensagem */}
                 {showPopup && (
-                    <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 p-4 rounded-lg shadow-lg text-white font-semibold ${popupType === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+                    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 p-4 rounded-lg shadow-lg text-white font-semibold" style={{ backgroundColor: popupType === 'success' ? '#28a745' : '#dc3545' }}>
                         {popupMessage}
                     </div>
                 )}
@@ -173,9 +210,9 @@ const LoginPage = () => {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen -mt-16"> {/* -mt-16 para centralizar na tela removendo o header invisível */}
-            <div className="p-8 rounded-2xl shadow-xl border border-gray-200 w-full max-w-sm" style={{ backgroundColor: '#d5cabd' }}>
-                <h2 className="text-3xl font-bold text-center mb-8" style={{ color: '#4e8397' }}>Login ACOZS</h2>
+        <div className="flex items-center justify-center min-h-screen p-4 sm:p-6 lg:p-8"> {/* Adicionado padding responsivo */}
+            <div className="w-full max-w-sm p-6 sm:p-8 rounded-2xl shadow-xl border border-gray-200" style={{ backgroundColor: '#d5cabd' }}> {/* Ajustado padding */}
+                <h2 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8" style={{ color: '#4e8397' }}>Login ACOZS</h2> {/* Font size responsivo */}
                 <form onSubmit={handleLogin}>
                     <div className="mb-4">
                         <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">Login:</label>
@@ -184,7 +221,7 @@ const LoginPage = () => {
                             id="username"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             required
                         />
                     </div>
@@ -195,18 +232,18 @@ const LoginPage = () => {
                             id="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             required
                         />
                     </div>
                     {loginError && (
-                        <div className="p-3 mb-4 rounded-lg text-center bg-red-100 text-red-700">
+                        <div className="p-3 mb-4 rounded-lg text-center bg-red-100 text-red-700 text-sm sm:text-base">
                             {loginError}
                         </div>
                     )}
                     <button
                         type="submit"
-                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75"
+                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                         style={{ backgroundColor: '#845ec2', '--tw-ring-color': '#845ec2' }}
                     >
                         Entrar
@@ -220,14 +257,14 @@ const LoginPage = () => {
 // Componente da Tela Inicial
 const Home = ({ setCurrentPage }) => {
     return (
-        <div className="flex flex-col items-center justify-center p-4">
-            <div className="p-8 rounded-2xl shadow-xl border border-gray-200 w-full max-w-md" style={{ backgroundColor: '#d5cabd' }}>
-                <h2 className="text-3xl font-bold text-center mb-8" style={{ color: '#4e8397' }}>Menu Principal</h2>
+        <div className="flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8"> {/* Adicionado padding responsivo */}
+            <div className="w-full max-w-md p-6 sm:p-8 rounded-2xl shadow-xl border border-gray-200" style={{ backgroundColor: '#d5cabd' }}> {/* Ajustado padding */}
+                <h2 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8" style={{ color: '#4e8397' }}>Menu Principal</h2> {/* Font size responsivo */}
                 <div className="space-y-4">
                     {/* Botão Cadastrar Atendimento */}
                     <button
                         onClick={() => setCurrentPage('cadastrar')}
-                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75"
+                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                         style={{ backgroundColor: '#845ec2', '--tw-ring-color': '#845ec2' }}
                     >
                         Cadastrar Atendimento
@@ -235,7 +272,7 @@ const Home = ({ setCurrentPage }) => {
                     {/* Botão Atualizar Atendimento */}
                     <button
                         onClick={() => setCurrentPage('atualizar')}
-                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75"
+                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                         style={{ backgroundColor: '#845ec2', '--tw-ring-color': '#845ec2' }}
                     >
                         Atualizar Atendimento - Setor
@@ -243,7 +280,7 @@ const Home = ({ setCurrentPage }) => {
                     {/* Botão Ver Todos */}
                     <button
                         onClick={() => setCurrentPage('verTodos')}
-                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75"
+                        className="w-full text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                         style={{ backgroundColor: '#845ec2', '--tw-ring-color': '#845ec2' }}
                     >
                         Ver Todos
@@ -251,7 +288,7 @@ const Home = ({ setCurrentPage }) => {
                     {/* Novo Botão Excluir Cadastro */}
                     <button
                         onClick={() => setCurrentPage('excluir')}
-                        className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75"
+                        className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                     >
                         Excluir Cadastro
                     </button>
@@ -275,7 +312,7 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
     const [sedeRegional, setSedeRegional] = useState('João Dias'); // Atualizado com a nova opção
     const [igreja, setIgreja] = useState('');
     const [declaracaoMenor, setDeclaracaoMenor] = useState('Não precisa - Maior de Idade');
-    const [anexos, setAnexos] = useState('Ok');
+    const [anexos, setAnexos] = useState(''); // Valor inicial pode ser vazio, ou o primeiro da lista de opções
     const [dataAtendimento, setDataAtendimento] = useState('');
     const [observacoes, setObservacoes] = useState('');
     const [message, setMessage] = useState(''); // Para exibir mensagens de sucesso/erro
@@ -338,8 +375,8 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
         const idadeCalculada = calcularIdade(dataNascimento);
 
         try {
-            // Caminho da coleção (dados públicos dentro do aplicativo)
-            const atendimentosCollectionRef = collection(db, `artifacts/${__app_id}/public/data/atendimentos`);
+            // Caminho da coleção (para hospedagem externa, sem __app_id)
+            const atendimentosCollectionRef = collection(db, `atendimentos`); // Caminho simplificado
 
             await addDoc(atendimentosCollectionRef, {
                 nome,
@@ -359,7 +396,8 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
                 observacoesAtendimento: '', // Valor inicial para Atualizar Atendimento
                 createdAt: new Date(),
                 updatedAt: new Date(),
-                createdBy: userId // Registra quem criou o atendimento
+                // Criado por: userId (sem __app_id para o caminho)
+                createdBy: userId
             });
 
             handleShowPopup('Cadastro criado com Sucesso!', 'success');
@@ -373,76 +411,74 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center p-4">
-            <div className="p-8 rounded-2xl shadow-xl border border-gray-200 w-full max-w-2xl" style={{ backgroundColor: '#d5cabd' }}>
-                <h2 className="text-3xl font-bold text-center mb-8" style={{ color: '#4e8397' }}>Cadastrar Atendimento</h2>
+        <div className="flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8"> {/* Adicionado padding responsivo */}
+            <div className="w-full max-w-2xl p-6 sm:p-8 rounded-2xl shadow-xl border border-gray-200" style={{ backgroundColor: '#d5cabd' }}> {/* Ajustado padding */}
+                <h2 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8" style={{ color: '#4e8397' }}>Cadastrar Atendimento</h2> {/* Font size responsivo */}
 
                 {/* Mensagens de feedback */}
                 {message && (
-                    <div className={`p-3 mb-4 rounded-lg text-center ${messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    <div className={`p-3 mb-4 rounded-lg text-center ${messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} text-sm sm:text-base`}> {/* Font size responsivo */}
                         {message}
                     </div>
                 )}
 
                 {/* Campos do formulário */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6"> {/* Ajustado gap */}
                     <div>
-                        <label htmlFor="nome" className="block text-sm font-medium text-gray-700 mb-1">Nome:</label>
+                        <label htmlFor="nome" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Nome:</label> {/* Font size responsivo */}
                         <input
                             type="text"
                             id="nome"
                             value={nome}
                             onChange={(e) => setNome(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
-                            placeholder="Nome completo do atendido"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             required
                         />
                     </div>
                     <div>
-                        <label htmlFor="whatsapp" className="block text-sm font-medium text-gray-700 mb-1">WhatsApp:</label>
+                        <label htmlFor="whatsapp" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">WhatsApp:</label> {/* Font size responsivo */}
                         <input
                             type="number"
                             id="whatsapp"
                             value={whatsapp}
                             onChange={(e) => setWhatsapp(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             placeholder="Ex: 5511999999999"
                             required
                         />
                     </div>
                     <div>
-                        <label htmlFor="dataNascimento" className="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento:</label>
+                        <label htmlFor="dataNascimento" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Data de Nascimento:</label> {/* Font size responsivo */}
                         <input
                             type="date"
                             id="dataNascimento"
                             value={dataNascimento}
                             onChange={(e) => setDataNascimento(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             required
                         />
                         {dataNascimento && (
-                            <p className="mt-1 text-sm text-gray-600">Idade: {calcularIdade(dataNascimento)} anos</p>
+                            <p className="mt-1 text-xs sm:text-sm text-gray-600">Idade: {calcularIdade(dataNascimento)} anos</p>
                         )}
                     </div>
                     <div>
-                        <label htmlFor="cpf" className="block text-sm font-medium text-gray-700 mb-1">CPF:</label>
+                        <label htmlFor="cpf" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">CPF:</label> {/* Font size responsivo */}
                         <input
                             type="number"
                             id="cpf"
                             value={cpf}
                             onChange={(e) => setCpf(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
-                            placeholder="Somente números"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             required
                         />
                     </div>
                     <div>
-                        <label htmlFor="estadoCivil" className="block text-sm font-medium text-gray-700 mb-1">Estado Civil:</label>
+                        <label htmlFor="estadoCivil" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Estado Civil:</label> {/* Font size responsivo */}
                         <select
                             id="estadoCivil"
                             value={estadoCivil}
                             onChange={(e) => setEstadoCivil(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                         >
                             {estadoCivilOptions.map(option => (
                                 <option key={option} value={option}>{option}</option>
@@ -450,12 +486,12 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
                         </select>
                     </div>
                     <div>
-                        <label htmlFor="sedeRegional" className="block text-sm font-medium text-gray-700 mb-1">Sede Regional:</label>
+                        <label htmlFor="sedeRegional" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Sede Regional:</label> {/* Font size responsivo */}
                         <select
                             id="sedeRegional"
                             value={sedeRegional}
                             onChange={(e) => setSedeRegional(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                         >
                             {sedeRegionalOptions.map(option => (
                                 <option key={option} value={option}>{option}</option>
@@ -463,23 +499,23 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
                         </select>
                     </div>
                     <div>
-                        <label htmlFor="igreja" className="block text-sm font-medium text-gray-700 mb-1">Igreja:</label>
+                        <label htmlFor="igreja" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Igreja:</label> {/* Font size responsivo */}
                         <input
                             type="text"
                             id="igreja"
                             value={igreja}
                             onChange={(e) => setIgreja(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             placeholder="Nome da igreja ou congregação"
                         />
                     </div>
                     <div>
-                        <label htmlFor="declaracaoMenor" className="block text-sm font-medium text-gray-700 mb-1">Declaração de Menor:</label>
+                        <label htmlFor="declaracaoMenor" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Declaração de Menor:</label> {/* Font size responsivo */}
                         <select
                             id="declaracaoMenor"
                             value={declaracaoMenor}
                             onChange={(e) => setDeclaracaoMenor(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                         >
                             {declaracaoMenorOptions.map(option => (
                                 <option key={option} value={option}>{option}</option>
@@ -487,12 +523,12 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
                         </select>
                     </div>
                     <div>
-                        <label htmlFor="anexos" className="block text-sm font-medium text-gray-700 mb-1">Anexos:</label>
+                        <label htmlFor="anexos" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Anexos:</label> {/* Font size responsivo */}
                         <select
                             id="anexos"
                             value={anexos}
                             onChange={(e) => setAnexos(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                         >
                             {anexosOptions.map(option => (
                                 <option key={option} value={option}>{option}</option>
@@ -500,43 +536,43 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
                         </select>
                     </div>
                     <div>
-                        <label htmlFor="dataAtendimento" className="block text-sm font-medium text-gray-700 mb-1">Data em que será atendido:</label>
+                        <label htmlFor="dataAtendimento" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Data em que será atendido:</label> {/* Font size responsivo */}
                         <input
                             type="date"
                             id="dataAtendimento"
                             value={dataAtendimento}
                             onChange={(e) => setDataAtendimento(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
+                            className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm text-base sm:text-lg" /* Font size responsivo */
                             required
                         />
                     </div>
                 </div>
                 <div className="mb-6">
-                    <label htmlFor="observacoes" className="block text-sm font-medium text-gray-700 mb-1">Observações (máx. 500 caracteres):</label>
+                    <label htmlFor="observacoes" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Observações (máx. 500 caracteres):</label> {/* Font size responsivo */}
                     <textarea
                         id="observacoes"
                         value={observacoes}
                         onChange={(e) => setObservacoes(e.target.value)}
                         maxLength="500"
-                        rows="4"
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm resize-y"
+                        rows="3" /* Reduzido o número de linhas para mobile */
+                        className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm resize-y text-base sm:text-lg" /* Font size responsivo */
                         placeholder="Informações adicionais sobre o atendimento..."
                     ></textarea>
-                    <p className="text-right text-sm text-gray-500">{observacoes.length}/500</p>
+                    <p className="text-right text-xs sm:text-sm text-gray-500">{observacoes.length}/500</p> {/* Font size responsivo */}
                 </div>
 
                 {/* Botões de ação */}
                 <div className="flex flex-col sm:flex-row justify-center gap-4">
                     <button
                         onClick={handleSaveAtendimento}
-                        className="text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75"
+                        className="w-full sm:w-auto text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                         style={{ backgroundColor: '#845ec2', '--tw-ring-color': '#845ec2' }}
                     >
                         Salvar
                     </button>
                     <button
                         onClick={() => setCurrentPage('home')}
-                        className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75"
+                        className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                     >
                         Voltar
                     </button>
@@ -549,7 +585,7 @@ const CadastrarAtendimento = ({ setCurrentPage }) => {
 // Componente para a tela de Atualização de Atendimento
 const AtualizarAtendimento = ({ setCurrentPage }) => {
     // Acesso ao contexto do Firebase e função de pop-up
-    const { db, isAuthReady, handleShowPopup } = useContext(FirebaseContext);
+    const { db, userId, isAuthReady, handleShowPopup } = useContext(FirebaseContext);
 
     // Estados para os atendimentos e o atendimento selecionado
     const [atendimentos, setAtendimentos] = useState([]);
@@ -571,17 +607,17 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
     useEffect(() => {
         if (!isAuthReady || !db) return;
 
-        const atendimentosCollectionRef = collection(db, `artifacts/${__app_id}/public/data/atendimentos`);
+        // Caminho da coleção (para hospedagem externa, sem __app_id)
+        const atendimentosCollectionRef = collection(db, `atendimentos`); // Caminho simplificado
         const q = query(atendimentosCollectionRef); // Não usa orderBy aqui para evitar erros de índice
 
-        // Listener em tempo real para os atendimentos
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedAtendimentos = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
-            // Ordenar atendimentos em memória
+            // Ordenar atendimentos em memória: primeiro por Sede Regional, depois por Nome
             fetchedAtendimentos.sort((a, b) => {
                 const sedeComparison = a.sedeRegional.localeCompare(b.sedeRegional);
                 if (sedeComparison !== 0) return sedeComparison;
@@ -595,7 +631,7 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
             setMessageType('error');
         });
 
-        return () => unsubscribe(); // Limpeza do listener
+        return () => unsubscribe();
     }, [db, isAuthReady]);
 
     // Efeito para carregar os dados do atendimento selecionado
@@ -632,7 +668,8 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
         }
 
         try {
-            const atendimentoRef = doc(db, `artifacts/${__app_id}/public/data/atendimentos`, selectedAtendimentoId);
+            // Caminho da coleção (para hospedagem externa, sem __app_id)
+            const atendimentoRef = doc(db, `atendimentos`, selectedAtendimentoId); // Caminho simplificado
             await updateDoc(atendimentoRef, {
                 atendimentoRealizado,
                 situacao,
@@ -662,27 +699,27 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center p-4">
-            <div className="p-8 rounded-2xl shadow-xl border border-gray-200 w-full max-w-2xl" style={{ backgroundColor: '#d5cabd' }}>
-                <h2 className="text-3xl font-bold text-center mb-8" style={{ color: '#4e8397' }}>Atualizar Atendimento - Setor</h2>
+        <div className="flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8"> {/* Adicionado padding responsivo */}
+            <div className="w-full max-w-2xl p-6 sm:p-8 rounded-2xl shadow-xl border border-gray-200" style={{ backgroundColor: '#d5cabd' }}> {/* Ajustado padding */}
+                <h2 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8" style={{ color: '#4e8397' }}>Atualizar Atendimento - Setor</h2> {/* Font size responsivo */}
 
                 {/* Mensagens de feedback */}
                 {message && (
-                    <div className={`p-3 mb-4 rounded-lg text-center ${messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    <div className={`p-3 mb-4 rounded-lg text-center ${messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} text-sm sm:text-base`}> {/* Font size responsivo */}
                         {message}
                     </div>
                 )}
 
                 {/* Campo de seleção de atendimento */}
                 <div className="mb-6">
-                    <label htmlFor="selectAtendimento" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="selectAtendimento" className="block text-sm sm:text-base font-medium text-gray-700 mb-1"> {/* Font size responsivo */}
                         Selecionar Atendimento:
                     </label>
                     <select
                         id="selectAtendimento"
                         value={selectedAtendimentoId}
                         onChange={(e) => setSelectedAtendimentoId(e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white"
+                        className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                     >
                         <option value="">-- Selecione um atendimento --</option>
                         {atendimentos.map(att => (
@@ -695,9 +732,9 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
 
                 {/* Exibição dos dados do atendimento selecionado (somente leitura) */}
                 {selectedAtendimento && (
-                    <div className="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
-                        <h3 className="text-xl font-semibold text-gray-800 mb-4">Dados da Ficha:</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div className="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200 shadow-inner text-sm sm:text-base"> {/* Font size responsivo */}
+                        <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4">Dados da Ficha:</h3> {/* Font size responsivo */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm sm:text-base"> {/* Ajustado gap, font size responsivo */}
                             <p><strong className="text-gray-700">Nome:</strong> {selectedAtendimento.nome}</p>
                             <p><strong className="text-gray-700">WhatsApp:</strong> {selectedAtendimento.whatsapp}</p>
                             <p><strong className="text-gray-700">Nascimento:</strong> {selectedAtendimento.dataNascimento} (Idade: {calcularIdade(selectedAtendimento.dataNascimento)})</p>
@@ -720,37 +757,37 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
                 {selectedAtendimento && (
                     <>
                         <div className="mb-6">
-                            <label htmlFor="atendimentoRealizado" className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="atendimentoRealizado" className="block text-sm sm:text-base font-medium text-gray-700 mb-1"> {/* Font size responsivo */}
                                 O atendimento já foi realizado?
                             </label>
                             <select
                                 id="atendimentoRealizado"
                                 value={atendimentoRealizado}
                                 onChange={(e) => setAtendimentoRealizado(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white"
+                                className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                             >
                                 <option value="">-- Selecione --</option>
                                 {atendimentoRealizadoOptions.map(option => (
                                     <option key={option} value={option}>{option}</option>
-                                ))}
+                            ))}
                             </select>
                         </div>
                         <div className="mb-6">
-                            <label htmlFor="situacao" className="block text-sm font-medium text-gray-700 mb-1">Situação:</label>
+                            <label htmlFor="situacao" className="block text-sm sm:text-base font-medium text-gray-700 mb-1">Situação:</label> {/* Font size responsivo */}
                             <select
                                 id="situacao"
                                 value={situacao}
                                 onChange={(e) => setSituacao(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white"
+                                className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white text-base sm:text-lg" /* Font size responsivo */
                             >
                                 <option value="">-- Selecione --</option>
                                 {situacaoOptions.map(option => (
                                     <option key={option} value={option}>{option}</option>
-                                ))}
+                            ))}
                             </select>
                         </div>
                         <div className="mb-6">
-                            <label htmlFor="observacoesAtendimento" className="block text-sm font-medium text-gray-700 mb-1">
+                            <label htmlFor="observacoesAtendimento" className="block text-sm sm:text-base font-medium text-gray-700 mb-1"> {/* Font size responsivo */}
                                 Observações descritas do Atendimento (máx. 500 caracteres):
                             </label>
                             <textarea
@@ -758,25 +795,25 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
                                 value={observacoesAtendimento}
                                 onChange={(e) => setObservacoesAtendimento(e.target.value)}
                                 maxLength="500"
-                                rows="4"
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm resize-y"
+                                rows="3" /* Reduzido o número de linhas para mobile */
+                                className="w-full p-2 sm:p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 shadow-sm resize-y text-base sm:text-lg" /* Font size responsivo */
                                 placeholder="Descreva o resultado do atendimento..."
                             ></textarea>
-                            <p className="text-right text-sm text-gray-500">{observacoesAtendimento.length}/500</p>
+                            <p className="text-right text-xs sm:text-sm text-gray-500">{observacoesAtendimento.length}/500</p> {/* Font size responsivo */}
                         </div>
 
                         {/* Botões de ação */}
                         <div className="flex flex-col sm:flex-row justify-center gap-4">
                             <button
                                 onClick={handleUpdateAtendimento}
-                                className="text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75"
+                                className="w-full sm:w-auto text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                                 style={{ backgroundColor: '#4e8397', '--tw-ring-color': '#4e8397' }}
                             >
                                 Salvar Atualização
                             </button>
                             <button
                                 onClick={() => setCurrentPage('home')}
-                                className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75"
+                                className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75 text-base sm:text-lg" /* Font size responsivo */
                             >
                                 Voltar
                             </button>
@@ -791,7 +828,8 @@ const AtualizarAtendimento = ({ setCurrentPage }) => {
 // Componente para a tela "Ver Todos" e exportação para PDF
 const VerTodos = ({ setCurrentPage }) => {
     // Acesso ao contexto do Firebase
-    const { db, isAuthReady } = useContext(FirebaseContext);
+    const { db, userId, isAuthReady } = useContext(FirebaseContext); // userId adicionado aqui
+
     const [atendimentos, setAtendimentos] = useState([]);
     const [message, setMessage] = useState('');
     const [messageType, setMessageType] = useState('');
@@ -800,10 +838,10 @@ const VerTodos = ({ setCurrentPage }) => {
     useEffect(() => {
         if (!isAuthReady || !db) return;
 
-        const atendimentosCollectionRef = collection(db, `artifacts/${__app_id}/public/data/atendimentos`);
+        // Caminho da coleção (para hospedagem externa, sem __app_id)
+        const atendimentosCollectionRef = collection(db, `atendimentos`); // Caminho simplificado
         const q = query(atendimentosCollectionRef);
 
-        // Listener em tempo real para os atendimentos
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedAtendimentos = snapshot.docs.map(doc => ({
                 id: doc.id,
@@ -929,17 +967,15 @@ const VerTodos = ({ setCurrentPage }) => {
     };
 
     return (
-        <div className="flex flex-col items-center p-4">
+        <div className="flex flex-col items-center justify-center p-4">
             <div className="p-8 rounded-2xl shadow-xl border border-gray-200 w-full max-w-4xl" style={{ backgroundColor: '#d5cabd' }}>
                 <h2 className="text-3xl font-bold text-center mb-8" style={{ color: '#4e8397' }}>Todos os Atendimentos</h2>
-
                 {/* Mensagens de feedback */}
                 {message && (
                     <div className={`p-3 mb-4 rounded-lg text-center ${messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {message}
                     </div>
                 )}
-
                 {/* Tabela de atendimentos */}
                 {atendimentos.length === 0 ? (
                     <p className="text-center text-gray-600">Nenhum atendimento cadastrado ainda.</p>
@@ -992,13 +1028,13 @@ const VerTodos = ({ setCurrentPage }) => {
                 <div className="flex flex-col sm:flex-row justify-center gap-4">
                     <button
                         onClick={() => setCurrentPage('home')}
-                        className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75"
+                        className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75"
                     >
                         Voltar para Tela Inicial
                     </button>
                     <button
                         onClick={exportToPdf}
-                        className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75"
+                        className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75"
                     >
                         Exportar para PDF
                     </button>
@@ -1010,7 +1046,8 @@ const VerTodos = ({ setCurrentPage }) => {
 
 // Componente para a tela de Excluir Cadastro
 const ExcluirCadastro = ({ setCurrentPage }) => {
-    const { db, isAuthReady, handleShowPopup } = useContext(FirebaseContext);
+    const { db, userId, isAuthReady, handleShowPopup } = useContext(FirebaseContext);
+
     const [atendimentos, setAtendimentos] = useState([]);
     const [selectedAtendimentoId, setSelectedAtendimentoId] = useState('');
     const [selectedAtendimento, setSelectedAtendimento] = useState(null);
@@ -1020,7 +1057,8 @@ const ExcluirCadastro = ({ setCurrentPage }) => {
     useEffect(() => {
         if (!isAuthReady || !db) return;
 
-        const atendimentosCollectionRef = collection(db, `artifacts/${__app_id}/public/data/atendimentos`);
+        // Caminho da coleção (para hospedagem externa, sem __app_id)
+        const atendimentosCollectionRef = collection(db, `atendimentos`); // Caminho simplificado
         const q = query(atendimentosCollectionRef);
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -1078,7 +1116,8 @@ const ExcluirCadastro = ({ setCurrentPage }) => {
         }
 
         try {
-            const atendimentoRef = doc(db, `artifacts/${__app_id}/public/data/atendimentos`, selectedAtendimentoId);
+            // Caminho da coleção (para hospedagem externa, sem __app_id)
+            const atendimentoRef = doc(db, `atendimentos`, selectedAtendimentoId); // Caminho simplificado
             await deleteDoc(atendimentoRef);
 
             handleShowPopup('Cadastro excluído com Sucesso!', 'success');
@@ -1140,26 +1179,6 @@ const ExcluirCadastro = ({ setCurrentPage }) => {
                                 <p className="text-gray-700 font-medium mt-2">Observações de Cadastro:</p>
                                 <p className="text-gray-600 bg-gray-100 p-2 rounded-md border border-gray-200">{selectedAtendimento.observacoesCadastro || 'N/A'}</p>
                             </div>
-                            <div className="col-span-1 sm:col-span-2">
-                                <p className="text-gray-700 font-medium mt-2">Status do Atendimento:</p>
-                                <p className="text-gray-600 bg-gray-100 p-2 rounded-md border border-gray-200">
-                                    Realizado: {selectedAtendimento.atendimentoRealizado || 'N/A'},
-                                    Situação: {selectedAtendimento.situacao || 'N/A'}
-                                </p>
-                                <p className="text-gray-700 font-medium mt-2">Observações do Atendimento:</p>
-                                <p className="text-gray-600 bg-gray-100 p-2 rounded-md border border-gray-200">{selectedAtendimento.observacoesAtendimento || 'N/A'}</p>
-                            </div>
-                        </div>
-                        <div className="flex justify-center mt-6">
-                            <button
-                                onClick={handleDeleteAtendimento}
-                                className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm2 3a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zm0 3a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z" clipRule="evenodd" />
-                                </svg>
-                                <span>Excluir</span>
-                            </button>
                         </div>
                     </div>
                 )}
@@ -1168,7 +1187,7 @@ const ExcluirCadastro = ({ setCurrentPage }) => {
                 <div className="flex justify-center mt-6">
                     <button
                         onClick={() => setCurrentPage('home')}
-                        className="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75"
+                        className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75"
                     >
                         Voltar para Tela Inicial
                     </button>

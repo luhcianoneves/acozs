@@ -2,7 +2,6 @@
   "name": "acozs",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://luhcianoneves.github.io/acozs/",
   "dependencies": {
     "firebase": "^11.6.1",
     "jspdf": "^2.5.1",
